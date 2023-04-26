@@ -258,17 +258,15 @@ def preprocess_data(A_flat,B_flat,problem,grid):
     num_lines = tf.shape(A)[1]
     
     # Specifying boundaries for weights value to avoid high impact of outliers
-    if grid=='cigre':
-      
+    if grid=='cigre':         
         lim = [1e6,1e6,3e6,3e6,1e5,1e6,1e8]
-      
-    if grid=='ober':
-     
+         
+    if grid=='ober':       
         lim =[1e6,1e7,1e5,1e5, 1e5, 1.4e5, 1e8]
-     
-    if grid=='stedin':
-    
-        lim =[1e7,1e7,1e7,1e8, 1e7, 1.4e7, 1e8]
+        
+       
+    if grid=='ober2':
+        lim =[1e6,1e7,1e75,1e7, 9e5, 1e6, 1e8]
   
   
     # Calculation of weights from standard deviation and removing outliers
@@ -295,7 +293,7 @@ def preprocess_data(A_flat,B_flat,problem,grid):
 
     
     # Get feature matrices and topology parameters. Lines admittance is both a parameter and a feature
-    A0 = tf.concat([A[:,:,:6], A[:,:,12:]], axis=2)
+    A0 = tf.concat([A[:,:,:2], A[:,:,12:]], axis=2)
     B0 = tf.concat([B[:,:,:1], B[:,:,9:]], axis=2)
     
     A_ij = tf.concat([A[:,:,2:7], cov_PL, A[:,:,8:9], cov_QL, A[:,:,10:11], cov_IL],axis=2)
@@ -318,7 +316,7 @@ def preprocess_data(A_flat,B_flat,problem,grid):
     a_ij_flat = tf.reshape(a_ij, [n_samples, -1])
     b_i_flat = tf.reshape(b_i, [n_samples, -1])
 
-    return  a_ij_flat, b_i_flat, A0, B0
+    return  a_ij_flat, b_i_flat, A0, B0, A
 
 class DeepStatisticalSolver2(keras.Model):
     
@@ -673,7 +671,6 @@ def train_model(model, problem, lr, lamda, norm, num_epochs, minibatch_size,data
           epoch_loss_avg = tf.keras.metrics.Mean()
           step = 0
           
-          
           # Training loop
           for A_flat,B_flat,U_flat in train_dataset:
             step +=1
@@ -728,41 +725,30 @@ def train_model(model, problem, lr, lamda, norm, num_epochs, minibatch_size,data
                 
                 
                 # Compute other variables to assess accuracy
-                if not grid=='stedin':
                 
                 
-                    pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y,A0,problem,grid)                    
-                    pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true,A0,problem,grid)
+                pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y,A0,problem,grid)                    
+                pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true,A0,problem,grid)
 
 
-                    # Comput standard deviation to detect high bias
-                    std_U += y_true[:,:,0].numpy().std()
-                    std_pred += y[:,:,0].numpy().std()
-                    
-                    # Compute RMSE on loading and voltage
-                    ll = tf.reduce_mean((loading_pred-loading_true)**2)**(1/2)
-                    lpl = tf.reduce_mean((loading_pred-loading_true)**2, axis=[0,2])**(1/2)
-                    lv = tf.reduce_mean((y_true[:,:,0]-y[:,:,0])**2)**(1/2)
-                    lp = tf.reduce_mean((pf_pred-pf_true)**2)**(1/2)
-                   
-       
-                   
-                    val_load_results.append(ll)
-                    val_lossp_results.append(lp)
-                    val_loadline_results.append(lpl)
-                    val_lossv_results.append(lv)
-                    
-                    
-                    
-                else:
-                    ind2 = np.unique(np.where(y_true[:,:,0]==0.)[1])   
-                    y_true  = np.delete(y_true, ind2, axis=1)
-                    y  = np.delete(y, ind2, axis=1)
+                # Comput standard deviation to detect high bias
+                std_U += y_true[:,:,0].numpy().std()
+                std_pred += y[:,:,0].numpy().std()
+                
+                # Compute RMSE on loading and voltage
+                ll = tf.reduce_mean((loading_pred-loading_true)**2)**(1/2)
+                lpl = tf.reduce_mean((loading_pred-loading_true)**2, axis=[0,2])**(1/2)
+                lv = tf.reduce_mean((y_true[:,:,0]-y[:,:,0])**2)**(1/2)
+                lp = tf.reduce_mean((pf_pred-pf_true)**2)**(1/2)
+               
    
-                    lv = tf.reduce_mean((y_true[:,:,0]-y[:,:,0])**2)**(1/2)
-
-                    val_lossv_results.append(lv)
+               
+                val_load_results.append(ll)
+                val_lossp_results.append(lp)
+                val_loadline_results.append(lpl)
+                val_lossv_results.append(lv)
                     
+                  
                     
                     
           print("std U: "+str(std_U/step_val))
@@ -787,7 +773,7 @@ def train_model(model, problem, lr, lamda, norm, num_epochs, minibatch_size,data
     ax = fig.add_axes([0,0,1,1])
     ax.plot(valload)
     ax.set_title("RMSE of loading in validation per epoch")
-    ax.set_ylabel("[-]")
+    ax.set_ylabel("[%]")
     ax.set_xlabel("# epoch")
     
     fig = plt.figure()
@@ -882,41 +868,31 @@ def train_model_sup(model, problem, lr, lamda, norm, num_epochs, minibatch_size,
                
                
                # Compute other variables to assess accuracy
-               if not grid=='stedin':
                
+               pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y,A0,problem,grid)                    
+               pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true,A0,problem,grid)
+    
+    
+                # Comput standard deviation to detect high bias
+               std_U += y_true[:,:,0].numpy().std()
+               std_pred += y[:,:,0].numpy().std()
+                
+                # Compute RMSE on loading and voltage
+               ll = tf.reduce_mean((loading_pred-loading_true)**2)**(1/2)
+               lpl = tf.reduce_mean((loading_pred-loading_true)**2, axis=[0,2])**(1/2)
+               lv = tf.reduce_mean((y_true[:,:,0]-y[:,:,0])**2)**(1/2)
+               lp = tf.reduce_mean((pf_pred-pf_true)**2)**(1/2)
                
-                   pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y,A0,problem,grid)                    
-                   pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true,A0,problem,grid)
-
-
-                   # Comput standard deviation to detect high bias
-                   std_U += y_true[:,:,0].numpy().std()
-                   std_pred += y[:,:,0].numpy().std()
-                   
-                   # Compute RMSE on loading and voltage
-                   ll = tf.reduce_mean((loading_pred-loading_true)**2)**(1/2)
-                   lpl = tf.reduce_mean((loading_pred-loading_true)**2, axis=[0,2])**(1/2)
-                   lv = tf.reduce_mean((y_true[:,:,0]-y[:,:,0])**2)**(1/2)
-                   lp = tf.reduce_mean((pf_pred-pf_true)**2)**(1/2)
-                  
-      
-                  
-                   val_load_results.append(ll)
-                   val_lossp_results.append(lp)
-                   val_loadline_results.append(lpl)
-                   val_lossv_results.append(lv)
-                   
-                   
-                   
-               else:
-                   ind2 = np.unique(np.where(y_true[:,:,0]==0.)[1])   
-                   y_true  = np.delete(y_true, ind2, axis=1)
-                   y  = np.delete(y, ind2, axis=1)
-  
-                   lv = tf.reduce_mean((y_true[:,:,0]-y[:,:,0])**2)**(1/2)
-
-                   val_lossv_results.append(lv)
-                   
+       
+               
+               val_load_results.append(ll)
+               val_lossp_results.append(lp)
+               val_loadline_results.append(lpl)
+               val_lossv_results.append(lv)
+                
+                
+                
+              
                    
                    
          print("std U: "+str(std_U/step_val))
@@ -978,29 +954,16 @@ def test_model(model, problem, minibatch_size, data_directory, case, grid):
           
           size_mb = tf.shape(U_flat)[0]
           y_true = tf.reshape(U_flat, [size_mb, -1, 2])
-          
-          if not grid=='stedin':
-          
-          
-              pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y,A0,problem,grid)           
-              pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true,A0,problem,grid)
-         
-              ll = tf.reduce_mean((loading_pred-loading_true)**2)**(1/2)
-              lv = tf.reduce_mean((y_true[:,:,0]-y[:,:,0])**2)**(1/2)
-          
-              test_loss_results.append(ll)
-              test_lossv_results.append(lv)
-              
-          else:
-              
-              ind2 = np.unique(np.where(y_true[:,:,0]==0.)[1])   
-              y_true  = np.delete(y_true, ind2, axis=1)
-              y  = np.delete(y, ind2, axis=1)
-
-              lv = tf.reduce_mean((y_true[:,:,0]-y[:,:,0])**2)**(1/2)
-
-              test_lossv_results.append(lv)
+      
+          pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y,A0,problem,grid)           
+          pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true,A0,problem,grid)
+       
+          ll = tf.reduce_mean((loading_pred-loading_true)**2)**(1/2)
+          lv = tf.reduce_mean((y_true[:,:,0]-y[:,:,0])**2)**(1/2)
         
+          test_loss_results.append(ll)
+          test_lossv_results.append(lv)
+         
     print("RMSE loading for test set: "+str(tf.math.reduce_mean(test_loss_results)))
     print("RMSE V for test set: "+str(tf.math.reduce_mean(test_lossv_results)))
     
@@ -1016,7 +979,7 @@ def get_pflow(y,A0, problem,grid):
     # Store trafo numbers for separation later
    if grid=='cigre':
         n_trafo = 2
-   if grid=='ober':
+   if (grid=='cigre' or grid=='ober2'):
         n_trafo = 1
    
    V_n = 20.

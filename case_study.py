@@ -32,7 +32,7 @@ import time
      - grid: (Used for training and testing)
          - 'cigre': 14-bus MV grid
          - 'ober': 70-bus MV/LV grid
-         - 'stedin': (Not fully implemented) 17-bus sub-part of Stedin's MV grid
+         - 'ober2': 179-bus MV/LV grid
          
      
     - data_directory: Should be linked to grid, change directory if needed
@@ -49,6 +49,9 @@ if grid=='ober':
     
 if grid=='cigre':
     data_directory = "datasets/data_cigre14"
+    
+if grid=='ober2':
+    data_directory = "datasets/data_ober2"
 
 case = "meas1"
 
@@ -67,17 +70,17 @@ except ImportError:
 # Setting up hyper-parameters
 
 lamda = 0.8
-latent_dim=12
-hidden_layers=5
-steps = 5
+latent_dim=40
+hidden_layers=3
+steps = 20
 step_size = 1./steps
 rate = 0.4
 l2_reg = 0.002
-lr=0.004
+lr=0.006
 non_lin = 'tanh'
-norm = 1500
+norm = 4000
 
-num_epochs = 1
+num_epochs = 200
 minibatch_size = 320
 
 # Choosing number of models to train
@@ -86,7 +89,7 @@ num_rep = 1
 models = {}
 
 # Can specifcy a model to load, otherwise will generate a new model
-saved_model = "saved_models\cigre_meas1_dss\model_epochs_2000"
+saved_model = "saved_models/"+grid+"_"+case+"_dss"
 
 # Set boolean if wanting to save the model
 saving = False
@@ -116,7 +119,7 @@ for m in range(num_rep):
         test_model(models[m], problem, minibatch_size, data_directory, case,grid)
                 
         if saving:
-            models[m].save("datasets\saved_models\_"+grid+"_"+str(case)+"_dss\model_"+str(m))
+            models[m].save("datasets\saved_models\_"+grid+"_"+str(case)+"_dss_model_"+str(m))
 
 
 # Loading grid for PandaPower
@@ -124,7 +127,10 @@ if grid=='cigre':
     net = ppn.create_cigre_network_mv(with_der="pv_wind")
 if grid=='ober':
     net, net1 = ppn.mv_oberrhein(separation_by_sub=True, include_substations = False, scenario = "generation")
-
+if grid=='ober2':
+    net = ppn.mv_oberrhein(separation_by_sub=False, include_substations = False, scenario = "generation")
+    net.switch['closed']=True
+    net.trafo.index = np.arange(1,net.trafo.index.size+1) + net.line.index[-1]
 
 # Setting the number of days (iteration) and hours through a profile day (timesteps), and a starting point (start)
 iteration = 5
@@ -171,13 +177,12 @@ line_loadmae = {}
 bus_vrmsep = {}
 line_loadrmsep = {}
 
-dss_metrics = pd.DataFrame({"RMSE V": 0., "RMSE load":0., "RMSE load line only":0.,"RMSE% V":0., "RMSE% load": 0.,\
-                            "MAE V":0., "MAE load": 0., "Mean duration": 0., "Convergence rate":1.},index = sets)
-    
-wls_metrics = pd.DataFrame({"RMSE V": 0., "RMSE load":0., "RMSE load line only":0., "RMSE% V":0., "RMSE% load": 0.,\
-                                "MAE V":0., "MAE load": 0., "Mean duration": 0., "Convergence rate":0.},index = sets)
-    
-    
+dss_metrics = pd.DataFrame({"RMSE V": 0., "RMSE load": 0., "RMSE load line only": 0., "RMSE% V": 0., "RMSE% load": 0., \
+                            "MAE V": 0., "MAE load": 0., "Mean duration": 0., "Convergence rate": 1.}, index=sets)
+
+wls_metrics = pd.DataFrame({"RMSE V": 0., "RMSE load": 0., "RMSE load line only": 0., "RMSE% V": 0., "RMSE% load": 0., \
+                            "MAE V": 0., "MAE load": 0., "Mean duration": 0., "Convergence rate": 0.}, index=sets)
+
 # Defining default measurement set and a special one to try the model on   
 mc_def = 1
 mc_spe = 3
@@ -358,6 +363,7 @@ for s in sets:
             v_wrong = np.array([])
             p_wrong = np.array([])
             v_miss = np.array([])
+            
         if s==1:
             se_case = "bad" 
             meas_case = 1
@@ -365,6 +371,7 @@ for s in sets:
             v_wrong = np.array([])
             p_wrong = np.array([])
             v_miss = np.array([])
+            
         if s==2:
             se_case = "good" 
             meas_case = 1
@@ -372,20 +379,23 @@ for s in sets:
             v_wrong = np.array([])
             p_wrong = np.array([])
             v_miss = np.array([])
+            
         if s==3:
             se_case = "good" 
-            meas_case = 1
-            
-            v_wrong = np.array([])
-            p_wrong = np.array([])
-            v_miss = np.array([39])
-        if s==4:
-            se_case = "perso" 
             meas_case = 2
             
             v_wrong = np.array([])
             p_wrong = np.array([])
             v_miss = np.array([])
+            
+        if s==4:
+            se_case = "perso" 
+            meas_case = 1
+            
+            v_wrong = np.array([])
+            p_wrong = np.array([])
+            v_miss = np.array([39])
+            
         if s==5:
             se_case = "perso" 
             meas_case = 1
@@ -393,13 +403,14 @@ for s in sets:
             v_wrong = np.array([58,39,80])
             p_wrong = np.array([162,165])
             v_miss = np.array([])
+            
         if s==6:
             se_case = "perso" 
             meas_case = 1
             
             v_wrong = np.array([58])
             p_wrong = np.array([])
-            v_miss = np.array([39,80])
+            v_miss = np.array([34,39,80])
             
         if s==7:
            
@@ -412,7 +423,7 @@ for s in sets:
             v_miss = np.array([])
             
             sgen_inc = 1.4
-            load_inc = 1.5
+            load_inc = 0.65
             
         if s==8:
            
@@ -425,7 +436,7 @@ for s in sets:
             v_miss = np.array([])
             
             sgen_inc = 2.5 
-            load_inc = 1.5
+            load_inc = 1.
         
         if s==9:
            
@@ -438,7 +449,9 @@ for s in sets:
             v_miss = np.array([])
             
             sgen_inc = .5 
-            load_inc = 1.
+            load_inc = 0.8
+            
+            
         if meas_case == 1:
 
             v_bus = np.array([58,39,80,86,146,81,34,142,100,50, 82, 161])
@@ -468,6 +481,119 @@ for s in sets:
                 
                 p_line = np.array([])  
                 i_line = np.array([])
+                
+    if grid=='ober2':
+        
+        if s==0:
+            se_case = "perso" 
+            meas_case = 1
+            
+            v_wrong = np.array([])
+            p_wrong = np.array([])
+            v_miss = np.array([])
+            
+        if s==1:
+            se_case = "bad" 
+            meas_case = 1
+            
+            v_wrong = np.array([])
+            p_wrong = np.array([])
+            v_miss = np.array([])
+            
+        if s==2:
+            se_case = "good" 
+            meas_case = 1
+            
+            v_wrong = np.array([])
+            p_wrong = np.array([])
+            v_miss = np.array([])
+            
+        if s==3:
+            se_case = "perso" 
+            meas_case = 2
+            
+            v_wrong = np.array([])
+            p_wrong = np.array([])
+            v_miss = np.array([])
+            
+        if s==4:
+            se_case = "perso" 
+            meas_case = 1
+            
+            v_wrong = np.array([])
+            p_wrong = np.array([])
+            v_miss = np.array([39])
+            
+        if s==5:
+            se_case = "perso" 
+            meas_case = 1
+            
+            v_wrong = np.array([58,39,80])
+            p_wrong = np.array([162,165])
+            v_miss = np.array([])
+            
+        if s==6:
+            se_case = "perso" 
+            meas_case = 1
+            
+            v_wrong = np.array([58])
+            p_wrong = np.array([])
+            v_miss = np.array([39,80])
+            
+        if s==7:           
+            se_case = "perso" 
+            meas_case = 1
+            
+            v_wrong = np.array([])
+            p_wrong = np.array([])
+            
+            v_miss = np.array([])
+            
+            sgen_inc = 1.05 # coefficient of increased capacity in future
+            load_inc = 1.95
+            
+        if s==8:          
+            se_case = "perso" 
+            meas_case = 1
+            
+            v_wrong = np.array([])
+            p_wrong = np.array([])
+            
+            v_miss = np.array([])
+            
+            sgen_inc = 1.875 # coefficient of increased capacity in future
+            load_inc = 3.
+        
+        if s==9:          
+            se_case = "perso" 
+            meas_case = 1
+            
+            v_wrong = np.array([])
+            p_wrong = np.array([])
+            
+            v_miss = np.array([])
+            
+            sgen_inc = .375 # coefficient of increased capacity in future
+            load_inc = 2.4
+        
+
+        if meas_case == 1:      
+            v_bus = np.array([58,39,80,86,146,81,34,142,100,50, 82, 161,318,319,6,126,245,171,273,54,167,74,33,213,237,316])
+            phi_bus = np.array([])
+            p_bus = np.array([])
+        
+            
+            p_line = np.array([162,165,185,81,60,171,70,64,62,193,18,46,5,11,122,28,45,94])  # line 12,13,14 have switches
+            i_line = np.array([162,165,185,171,62,193,46,28])
+        if meas_case == 2:
+
+            v_bus = np.array([58,39,80,86,146,81,100,50, 318,319,6,126,245,171,273,167,33,237])
+            phi_bus = np.array([])
+            p_bus = np.array([])
+
+            
+            p_line = np.array([162,165,81,60,70,62,193,18,5,122,28,94])  # line 12,13,14 have switches
+            i_line = np.array([162,165,62,193])
 
 
     
@@ -587,7 +713,28 @@ for s in sets:
                 
             load_sgen[i]= net.sgen['p_mw'].mul((4*profile_day_sun[i] + 6*profile_day_wind[i])/10) * sgen_inc
             
+    if grid=='ober2':
+        
+        load_p = pd.DataFrame(index = net.load.index)
+        load_q = pd.DataFrame(index = net.load.index)
+        load_sgen = pd.DataFrame(index = net.sgen.index)
+        
+        if s<7:
+            sgen_inc = 1.5 # coefficient of increased capacity in future
+            load_inc = 1.5
+        
+        for i in range(household_load_profile.size): 
             
+            
+            load_p[i]=net.load['p_mw'].mul(household_load_profile[i]) * load_inc
+            load_p[i][net.load[net.load['type']=="MV Load"].index]=\
+                net.load['p_mw'][net.load[net.load['type']=="MV Load"].index].mul(industry_load_profile[i]) * load_inc
+            load_q[i]=net.load['q_mvar'].mul(household_load_profile[i]) * load_inc
+            load_q[i][net.load[net.load['type']=="MV Load"].index]=\
+                net.load['q_mvar'][net.load[net.load['type']=="MV Load"].index].mul(industry_load_profile[i]) * load_inc
+                
+            load_sgen[i]= net.sgen['p_mw'].mul((4*profile_day_sun[i] + 6*profile_day_wind[i])/10) * sgen_inc
+                 
     
     
     numpy_load_p = load_p.to_numpy()
@@ -643,7 +790,11 @@ for s in sets:
         pf_loading_traf=pd.DataFrame(index = net.trafo.index + net.line.index.size - 3,columns = ts)
     if grid=='ober':
         pf_loading_traf=pd.DataFrame(index = net.trafo.index,columns = ts)
-      
+    if grid=='ober2':
+        pf_loading_traf=pd.DataFrame(index =  net.trafo.index,columns = ts)
+        
+        
+        
     pf_pt=pd.DataFrame(columns = ts)
     pf_qt=pd.DataFrame(columns = ts)
     pf_it=pd.DataFrame(columns = ts)
@@ -728,7 +879,11 @@ for s in sets:
         nl=68
         se_loading_traf=pd.DataFrame(index=net.trafo.index, columns = ts)
         loading_pred=pd.DataFrame(index=np.concatenate([net.line.index[:-5], net.line.index[-4:], net.trafo.index]),columns = ts)
-    
+    if grid=='ober2':
+            nl=181
+            se_loading_traf=pd.DataFrame(index=net.trafo.index, columns = ts)
+            loading_pred=pd.DataFrame(index=np.concatenate([net.line.index, net.trafo.index]),columns = ts)
+        
     pred_v=pd.DataFrame(index=net.bus.index,columns = ts)
     
     
@@ -759,7 +914,7 @@ for s in sets:
             meas_ql[t][l] = q
             
             # Flow measurements only for CIGRE otherwise very poor convergence rate
-            if not grid=='ober':
+            if not (grid=='ober' or grid=='ober2'):
                 pp.create_measurement(net, "q", "line", q , q * meas_noise, element=l, side="from")
                 pp.create_measurement(net, "p", "line", p , p * meas_noise, element=l, side="from")
                 
@@ -772,7 +927,7 @@ for s in sets:
            
         
             # Flow measurements only for CIGRE otherwise very poor convergence rate
-            if not grid=='ober':
+            if not (grid=='ober' or grid=='ober2'):
                  pp.create_measurement(net, "i", "line", i , i * i_noise, element=l, side="from")
          
 
@@ -913,14 +1068,14 @@ for s in sets:
         dss_data = time.time()
         
         # Normalize data
-        a_flat, b_flat, A0,B0 = preprocess_data(A_flat,B_flat,problem,grid)
+        a_flat, b_flat, A0,B0, A = preprocess_data(A_flat,B_flat,U_flat,problem,grid)
         
         
         for m in range(num_rep):
             
             # Perform SE
             t_preproc = time.time()
-            pred=models[m](a_flat,b_flat,A0, training=False)
+            pred=models[m](a_flat,b_flat,U_flat,A0, training=False)
             t_pred=time.time()
             
             
@@ -935,12 +1090,12 @@ for s in sets:
             pred_v[t] = y[0,:,0]
             
             # Pass output in powrr flow equations to get line loading
-            pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading = get_pflow(y,A0,problem,grid)
+            pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading = get_pflow(y,A,problem,grid)
             loading_pred[t] = loading[0,:,0]
             
             
             # Plot error for specific time in bus and lines
-            if any(np.array([2,10,14,17,21])==t):
+            if any(np.array([2,10,21])==t):
                   
                   if grid=='ober':
                       x = np.arange(pred_v.index.size)
@@ -954,7 +1109,12 @@ for s in sets:
                       nt = 2
                       pf = pd.concat([pf_loading[t][:12], pf_loading_traf[t]])
                       se = pd.concat([se_loading[t][:12], se_loading_traf[t]])
-                  
+                  if grid=='cigre':
+                        x = np.arange(pred_v.index.size)
+                        x2 = np.arange(loading_pred.index.size)
+                        nt = 2
+                        pf = pd.concat([pf_loading[t][:12], pf_loading_traf[t]])
+                        se = pd.concat([se_loading[t][:12], se_loading_traf[t]])
                  
                   w = 0.3
                  
@@ -994,6 +1154,11 @@ for s in sets:
         b_list = np.array([80,120,34,192,223,161])
         l_list = np.array([157,185,60,162,68])
         tr_list = np.array([114])
+        
+    if grid=='ober2':
+            b_list = np.array([80,120,34,161,6,303,169,238])
+            l_list = np.array([162,60,181,193,122,99,22])
+            tr_list = np.array([194])
     
     for b in b_list:
     
@@ -1009,6 +1174,7 @@ for s in sets:
         ax.set_ylabel("Voltage [p.u.]")
         ax.set_xlabel("Time [h]")
         ax.set_ylim(0.95,1.05)
+        
         
     for l in l_list:
     
@@ -1055,23 +1221,28 @@ for s in sets:
          
     print(" ==== DSS === ")
     
-    if grid=='ober':
-        pf = pd.concat([pf_loading[:-5],pf_loading[-4:], pf_loading_traf],axis=0)
-        se = pd.concat([se_loading[:-5],se_loading[-4:], se_loading_traf],axis=0)
-        nt = 1
     if grid=='cigre':
 
         pf = pd.concat([pf_loading[:12], pf_loading_traf])
         se = pd.concat([se_loading[:12], se_loading_traf])
         nt =2
+    if grid=='ober':
+        pf = pd.concat([pf_loading[:-5],pf_loading[-4:], pf_loading_traf],axis=0)
+        se = pd.concat([se_loading[:-5],se_loading[-4:], se_loading_traf],axis=0)
+        nt = 1
+    if grid=='ober2':
+        pf = pd.concat([pf_loading, pf_loading_traf],axis=0)
+        se = pd.concat([se_loading, se_loading_traf],axis=0)
+        nt = 2
         
     bus_vrmse[s] = pf_vm.subtract(pred_v).pow(2).mean(axis=1).pow(0.5)
     dss_metrics["RMSE V"][s] = bus_vrmse[s].mean()
-    
+
     line_loadrmse[s] = pf.subtract(loading_pred).pow(2).mean(axis=1).pow(0.5)
     dss_metrics["RMSE load"][s] = line_loadrmse[s].mean()
+
     dss_metrics["RMSE load line only"][s] = line_loadrmse[s][:-nt].mean()
-    
+
     print("RMSE V mean: "+str(dss_metrics["RMSE V"][s]))
     print("RMSE LOADING mean: "+str(dss_metrics["RMSE load"][s]))
     print("RMSE LOADING mean no traf: "+str(dss_metrics["RMSE load line only"][s]))
@@ -1097,7 +1268,7 @@ for s in sets:
     print("RMSE% LOADING mean: "+str(dss_metrics["RMSE% load"][s]))
     
     print("")
-    dss_metrics["Mean duration"][s] = t_df.loc[s].mean()      
+    dss_metrics["Mean duration"][s] = t_df.loc[s].mean()
     print("Prediction time: "+str(dss_metrics["Mean duration"][s]))
     print("")
     
@@ -1154,7 +1325,7 @@ for s in sets:
         wls_metrics["RMSE V"][s] = rmse_vm.mean(axis=0)
         wls_metrics["RMSE load"][s] = pd.concat([rmse_loading[:12], rmse_loading_traf]).mean(axis=0)
         wls_metrics["RMSE load line only"][s] = rmse_loading.mean()
-        
+
         wls_metrics["MAE V"][s] = step_mae_vm.mean(axis=0)
         wls_metrics["MAE load"][s] = pd.concat([step_mae_loading[:12], step_mae_loading_traf]).mean(axis=0)
         
@@ -1180,18 +1351,23 @@ for s in sets:
         
         """ Compare performances for one case study """
 
-        
-        if grid=='ober':
-            x = np.arange(pred_v.index.size)
-            x2 = np.arange(loading_pred.index.size)
-            serm = pd.concat([rmse_loading[:-5],rmse_loading[-4:], rmse_loading_traf],axis=0)
-            semae = pd.concat([step_mae_loading[:-5],step_mae_loading[-4:], step_mae_loading_traf],axis=0)
         if grid=='cigre':
             x = np.arange(pred_v.index.size)
             x2 = np.arange(loading_pred.index.size)
             serm = pd.concat([rmse_loading[:12], rmse_loading_traf])
             semae =  pd.concat([step_mae_loading[:12], step_mae_loading_traf])
-    
+        if grid=='ober':
+            x = np.arange(pred_v.index.size)
+            x2 = np.arange(loading_pred.index.size)
+            serm = pd.concat([rmse_loading[:-5],rmse_loading[-4:], rmse_loading_traf],axis=0)
+            semae = pd.concat([step_mae_loading[:-5],step_mae_loading[-4:], step_mae_loading_traf],axis=0)
+        if grid=='ober2':
+            x = np.arange(pred_v.index.size)
+            x2 = np.arange(loading_pred.index.size)
+            serm = pd.concat([rmse_loading, rmse_loading_traf],axis=0)
+            semae = pd.concat([step_mae_loading, step_mae_loading_traf],axis=0)
+       
+        
         w = 0.4
        
         fig = plt.figure(figsize=[5,3])
@@ -1213,8 +1389,8 @@ for s in sets:
         ax.bar(x2-w/2, height = line_loadrmse[s], width=w, color='salmon', align='center', label = 'DSS')
         ax.bar(x2+w/2, height = serm, width=w, color='teal', align='center', label = 'WLS')
         ax.set_title("RMSE of line loading, for case study #"+str(s+1))
-        if (max(line_loadrmse[s])>100. or max(serm)>100.):
-            ax.set_ylim(0.,100.)
+        if (max(line_loadrmse[s])>45. or max(serm)>45.):
+            ax.set_ylim(0.,45.)
         ax.set_ylabel("[%]")
         ax.set_xlabel("Line index")        
         ax.legend()
@@ -1239,8 +1415,8 @@ for s in sets:
         ax.bar(x2+w/2, height = semae, width=w, color='teal', align='center', label = 'WLS')
         ax.set_title("MAE of line loading, for case study #"+str(s+1))
         ax.set_ylabel("[%]")
-        if (max(line_loadmae[s])>100. or max(semae)>100.):
-            ax.set_ylim(0.,100.)
+        if (max(line_loadmae[s])>45. or max(semae)>45.):
+                ax.set_ylim(0.,45.)
         ax.set_xlabel("Line index")           
         ax.legend()
 
@@ -1295,18 +1471,3 @@ ax.legend(loc='lower right')
             
 wls_metrics.to_csv(path_or_buf="saved_metrics/wls_metrics_"+str(grid)+"_betterm_meas1.csv")
 dss_metrics.to_csv(path_or_buf="saved_metrics/dss_metrics_"+str(grid)+"_betterm_meas1.csv")    
- 
-
-
-# To show impact of voltage/angle error :
-    
-    # x = np.arange(-0.05,0.05,0.01)
-    # fig = plt.figure()
-    # ax = fig.add_axes([0,0,1,1])
-    # for U1 in np.arange(0.97,1.03,0.01):
-    #     for U2 in np.arange(0.97,1.03,0.01):
-    #             p=(-U1*U2*(0.233*np.cos(x)-0.332*np.sin(x)) +0.233 *U1**2)
-    #             q=(U1*U2*(-0.233*np.sin(x)-0.332*np.cos(x)) -(-0.332+0.000134/2) *U1**2)
-    #             i=np.abs((p-1j*q)/(np.sqrt(3)*U1))*20
-    #             ax.plot(x,i/0.145*100)
-    # ax.axhline(y=100,linestyle='--',color='red')
