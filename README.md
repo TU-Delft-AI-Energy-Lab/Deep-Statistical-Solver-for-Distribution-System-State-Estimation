@@ -2,7 +2,7 @@
 
 This repository contains code for the paper:
 
-*Benjamin Habib, Elvin Isufi, Ward van Breda, Arjen Jongepier, Jochen L. Cremer, "Deep Statistical Solver for Distribution System State Estimation" https://arxiv.org/abs/2301.01835*
+*Benjamin Habib, Elvin Isufi, Ward van Breda, Arjen Jongepier, Jochen L. Cremer, "Deep Statistical Solver for Distribution System State Estimation" IEEE Transactions on Power Systems, June 2023, https://arxiv.org/abs/2301.01835*
 
 ## Data
 This repository includes the synthetic data used for case studies as well as the scripts developed to generate the data.
