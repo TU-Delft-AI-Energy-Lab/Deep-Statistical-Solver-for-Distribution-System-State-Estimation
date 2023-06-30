@@ -2,7 +2,7 @@
 
 This repository contains code for the paper:
 
-*B. Habib, E. Isufi, W. v. Breda, A. Jongepier and J. L. Cremer, "Deep Statistical Solver for Distribution System State Estimation," in IEEE Transactions on Power Systems, doi: 10.1109/TPWRS.2023.3290358.*
+*B. Habib, E. Isufi, W. v. Breda, A. Jongepier and J. L. Cremer, "Deep Statistical Solver for Distribution System State Estimation," in IEEE Transactions on Power Systems, [doi: 10.1109/TPWRS.2023.3290358](https://doi.org/10.1109/TPWRS.2023.3290358).*
 
 ## Data
 This repository includes the synthetic data used for case studies as well as the scripts developed to generate the data.
