@@ -5,14 +5,22 @@ import pandapower.estimation as est
 import pandapower.networks as ppn
 import matplotlib.pyplot as plt
 import pandas as pd
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
+def fxn():
+    warnings.warn("PP int64 est", RuntimeWarning)
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    fxn()
 
 from loadsampling import samplermontecarlo as smc
 from loadsampling import samplermontecarlo_normal as smc_norm
 from loadsampling import kumaraswamymontecarlo as smc_ks
 from loadsampling import progressBar
 
-
+import numba
 
 import tensorflow as tf
 from fun_dss import DeepStatisticalSolver2 as dss
@@ -153,9 +161,9 @@ load_dist = "normal"
 
 
 # Setting numbers of case studies
-sets = np.arange(10)
+sets = np.arange(1)
 
-# Initializations of DataFrames  and dicts to save performences
+# Initializations of DataFrames  and dicts to save performances
 t_df = pd.DataFrame(index = sets, columns = ts)
 duration_se =pd.DataFrame(index = sets, columns = ts)
 
@@ -808,7 +816,7 @@ for s in sets:
         net.load['q_mvar'] = pd_mc_load_q[t]
         net.sgen['p_mw'] = pd_mc_load_sgen[t]
         
-        pp.runpp(net,calculate_voltage_angles=True)
+        pp.runpp(net,calculate_voltage_angles=True, numba=False)  # Numba dependency to fix later, pandapower does not work with Numba 0.57>
         
         pf_vm[t] = net.res_bus["vm_pu"]
         pf_va[t] = net.res_bus["va_degree"]
@@ -1068,7 +1076,7 @@ for s in sets:
         dss_data = time.time()
         
         # Normalize data
-        a_flat, b_flat, A0,B0, A = preprocess_data(A_flat,B_flat,U_flat,problem,grid)
+        a_flat, b_flat, A0,B0, A = preprocess_data(A_flat,B_flat,problem,grid)
         
         
         for m in range(num_rep):
@@ -1119,7 +1127,7 @@ for s in sets:
                   w = 0.3
                  
                   fig = plt.figure(figsize=[5,3])
-                  ax = fig.add_axes([0,0,1,1])
+                  ax = fig.add_subplot(111)
                   ax.bar(x-w, height = pf_vm[t], width=w, color='purple', align='center', label = 'PF')
                   ax.bar(x, height = y[0,:,0], width=w, color='salmon', align='center', label = 'DSS')                     
                   ax.bar(x+w, height = se_vm[t], width=w, color='teal', align='center', label = 'WLS')
@@ -1130,7 +1138,7 @@ for s in sets:
                   ax.set_ylim(0.95,1.05)
                  
                   fig = plt.figure(figsize=[5,3])
-                  ax = fig.add_axes([0,0,1,1])
+                  ax = fig.add_subplot(111)
                   ax.bar(x2-w, height = pf, width=w, color='purple', align='center', label = 'PF')
                   ax.bar(x2, height = loading_pred[t], width=w, color='salmon', align='center', label = 'DSS')                     
                   ax.bar(x2+w, height = se, width=w, color='teal', align='center', label = 'WLS')
@@ -1163,7 +1171,7 @@ for s in sets:
     for b in b_list:
     
         fig = plt.figure(figsize=[5,3])
-        ax = fig.add_axes([0,0,1,1])
+        ax = fig.add_subplot(111)
         ax.plot(ts, pf_vm.loc[b], color='purple',linewidth=2.,label="PF")
         if any(v_bus==b):
             ax.plot(ts, meas_vm.loc[b], color='deepskyblue',linewidth=2.,label="Measurement")
@@ -1179,7 +1187,7 @@ for s in sets:
     for l in l_list:
     
         fig = plt.figure(figsize=[5,3])
-        ax = fig.add_axes([0,0,1,1])
+        ax = fig.add_subplot(111)
         ax.plot(ts, pf_loading.loc[l], color='purple',linewidth=2.,label="PF")
         if any(i_line==l):
             i_measurement = meas_il.loc[l]
@@ -1198,7 +1206,7 @@ for s in sets:
     for tr in tr_list:
     
         fig = plt.figure(figsize=[5,3])
-        ax = fig.add_axes([0,0,1,1])
+        ax = fig.add_subplot(111)
         ax.plot(ts, pf_loading_traf.loc[tr], color='purple',linewidth=2.,label="PF")
         ax.plot(ts, loading_pred.loc[tr], color='salmon',linewidth=2.,label="DSS")        
         ax.plot(ts, se_loading_traf.loc[tr], color='teal',linewidth=2.,label="WLS")
@@ -1371,7 +1379,7 @@ for s in sets:
         w = 0.4
        
         fig = plt.figure(figsize=[5,3])
-        ax = fig.add_axes([0,0,1,1])
+        ax = fig.add_subplot(111)
         ax.bar(x-w/2, height = bus_vrmse[s], width=w, color='salmon', align='center', label = 'DSS')
         ax.bar(x+w/2, height = rmse_vm.values, width=w, color='teal', align='center', label = 'WLS')
         ax.set_title("RMSE of Voltage magnitude per bus, for case study #"+str(s+1))
@@ -1385,7 +1393,7 @@ for s in sets:
         ax.legend()
         
         fig = plt.figure(figsize=[5,3])
-        ax = fig.add_axes([0,0,1,1])
+        ax = fig.add_subplot(111)
         ax.bar(x2-w/2, height = line_loadrmse[s], width=w, color='salmon', align='center', label = 'DSS')
         ax.bar(x2+w/2, height = serm, width=w, color='teal', align='center', label = 'WLS')
         ax.set_title("RMSE of line loading, for case study #"+str(s+1))
@@ -1397,7 +1405,7 @@ for s in sets:
    
         
         fig = plt.figure(figsize=[5,3])
-        ax = fig.add_axes([0,0,1,1])
+        ax = fig.add_subplot(111)
         ax.bar(x-w/2, height = bus_vmae[s], width=w, color='salmon', align='center', label = 'DSS')
         ax.bar(x+w/2, height = step_mae_vm.values, width=w, color='teal', align='center', label = 'WLS')
         ax.set_title("MAE of Voltage magnitude per bus, for case study #"+str(s+1))
@@ -1410,7 +1418,7 @@ for s in sets:
         ax.axhline(y=0.02,linestyle='--',color='red')
         
         fig = plt.figure(figsize=[5,3])
-        ax = fig.add_axes([0,0,1,1])
+        ax = fig.add_subplot(111)
         ax.bar(x2-w/2, height = line_loadmae[s], width=w, color='salmon', align='center', label = 'DSS')
         ax.bar(x2+w/2, height = semae, width=w, color='teal', align='center', label = 'WLS')
         ax.set_title("MAE of line loading, for case study #"+str(s+1))
@@ -1430,7 +1438,8 @@ x = np.arange(1,len(sets)+1)
 w = 0.4
 
 fig = plt.figure(figsize=[5,3])
-ax = fig.add_axes([0,0,1,1])
+
+ax = fig.add_subplot(111)
 ax.bar(x-w/2, height = dss_metrics["RMSE V"], width=w, color='salmon', align='center', label = 'DSS')
 ax.bar(x+w/2, height = wls_metrics["RMSE V"], width=w, color='teal', align='center', label = 'WLS')
 ax.set_title("RMSE of Voltage magnitude per case study")
@@ -1438,9 +1447,11 @@ ax.set_ylabel("[-]")
 ax.set_xlabel("Case study")
 ax.set_xticks(x)
 ax.legend()
+fig.show()
+
 
 fig = plt.figure(figsize=[5,3])
-ax = fig.add_axes([0,0,1,1])
+ax = fig.add_subplot(111)
 ax.bar(x-w/2, height = dss_metrics["RMSE load"], width=w, color='salmon', align='center', label = 'DSS')
 ax.bar(x+w/2, height = wls_metrics["RMSE load"], width=w, color='teal', align='center', label = 'WLS')
 ax.set_title("RMSE of line loading per case study")
@@ -1450,7 +1461,7 @@ ax.set_xticks(x)
 ax.legend()
 
 fig = plt.figure(figsize=[5,3])
-ax = fig.add_axes([0,0,1,1])
+ax = fig.add_subplot(111)
 ax.bar(x-w/2, height = dss_metrics["Convergence rate"]*100, width=w, color='salmon', align='center', label = 'DSS')
 ax.bar(x+w/2, height = wls_metrics["Convergence rate"]*100., width=w, color='teal', align='center', label = 'WLS')
 ax.set_title("Convergence rate per case study")
@@ -1460,7 +1471,7 @@ ax.set_xticks(x)
 ax.legend(loc='lower right') 
 
 fig = plt.figure(figsize=[5,3])
-ax = fig.add_axes([0,0,1,1])
+ax = fig.add_subplot(111)
 ax.bar(x-w/2, height = dss_metrics["Mean duration"]*1000, width=w, color='salmon', align='center', label = 'DSS')
 ax.bar(x+w/2, height = wls_metrics["Mean duration"]*1000, width=w, color='teal', align='center', label = 'WLS')
 ax.set_title("Duration per case study")
@@ -1469,5 +1480,6 @@ ax.set_xlabel("Case study")
 ax.set_xticks(x)
 ax.legend(loc='lower right') 
             
-wls_metrics.to_csv(path_or_buf="saved_metrics/wls_metrics_"+str(grid)+"_betterm_meas1.csv")
-dss_metrics.to_csv(path_or_buf="saved_metrics/dss_metrics_"+str(grid)+"_betterm_meas1.csv")    
+# wls_metrics.to_csv(path_or_buf="saved_metrics/wls_metrics_"+str(grid)+"_betterm_meas1.csv")
+# dss_metrics.to_csv(path_or_buf="saved_metrics/dss_metrics_"+str(grid)+"_betterm_meas1.csv")
+plt.show()
