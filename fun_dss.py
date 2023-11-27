@@ -979,7 +979,7 @@ def get_pflow(y,A0, problem,grid):
     # Store trafo numbers for separation later
    if grid=='cigre':
         n_trafo = 2
-   if (grid=='cigre' or grid=='ober2'):
+   if (grid=='ober' or grid=='ober2'):
         n_trafo = 1
    
    V_n = 20.
