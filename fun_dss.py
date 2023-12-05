@@ -325,7 +325,7 @@ def preprocess_data(A_flat, B_flat, problem, grid):
     a_ij_flat = tf.reshape(a_ij, [n_samples, -1])
     b_i_flat = tf.reshape(b_i, [n_samples, -1])
 
-    return a_ij_flat, b_i_flat, A0, B0, A
+    return a_ij_flat, b_i_flat, A0, B0
 
 
 class DeepStatisticalSolver2(keras.Model):
