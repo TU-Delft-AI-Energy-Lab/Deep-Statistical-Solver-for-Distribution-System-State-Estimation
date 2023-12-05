@@ -157,8 +157,8 @@ class Problem:
 
 
     def cost_function(self, A_flat, B_flat, y, lamda, A0, B0):
-        
-        
+
+
         """ Processing input features, parameters and output variables """
 
         if self.grid=='cigre':
@@ -215,7 +215,7 @@ class Problem:
         # Rebuild of A and B matrice
         meas_theta = tf.expand_dims(B_meas[:,:,2]  * (1.-B0[:,:,-1]),axis=2)  # Enforcing a 0 value in measurement of theta at the slack  
         
-        A = tf.concat([A0[:,:,0:2], A_meas, A0[:,:,6:]], axis=2)                                            # tf.float32, [n_samples, n_edges, 13]
+        A = tf.concat([A0[:,:,0:2], A_meas, A0[:,:,2:]], axis=2)                                             # tf.float32, [n_samples, n_edges, 13]
         B = tf.concat([B0[:,:,0:1], B_meas[:,:,0:2],  meas_theta, B_meas[:,:,3:], B0[:,:,1:]], axis=2)      # tf.float32, [n_samples, n_buses, 11]
 
 
@@ -300,6 +300,7 @@ class Problem:
         
         
         #Summing flow to balance in buses, negative signs in sum to follow conventions from PandaPower
+
         P_i = (-custom_scatter(indices_to, P_ij_to, [n_samples, n_nodes, 1]) -
                custom_scatter(indices_from, P_ij_from, [n_samples, n_nodes, 1]))  # tf.float32, [n_samples, n_nodes, 1], in p.u.
         Q_i = (-custom_scatter(indices_to, Q_ij_to, [n_samples, n_nodes, 1]) -
@@ -338,20 +339,29 @@ class Problem:
         cost_QL = tf.reduce_sum(delta_QL, axis=[1,2]) / tf.math.maximum(tf.constant([1.]),tf.reduce_sum(non_zero_QL, axis=[1,2])) 
         cost_IL = tf.reduce_sum(delta_IL, axis=[1,2]) / tf.math.maximum(tf.constant([1.]),tf.reduce_sum(non_zero_IL, axis=[1,2]) )
 
-        
         # Add constraint: U1 in [0.95,1.05] p.u.
-        regularizer = tf.reduce_sum(((tf.nn.relu(0.95 - U1) + tf.nn.relu(U1-1.05)) * tf.math.reduce_max(cov_v)), axis=[1,2]) #+ \
+        regularizer = tf.reduce_sum(((tf.nn.relu(0.95 - U1) + tf.nn.relu(U1 - 1.05)) * tf.math.reduce_max(cov_v)),
+                                    axis=[1, 2])  # + \
 
         # Compute loading and add constraint: loading < 100%
-        i_ka = tf.maximum(I_ij_from, I_ij_to)[:,:-2,:] * V_n
-        i_kat = tf.maximum(I_ij_from[:,-2:,:] * V_h/25, I_ij_to[:,-2:,:] * V_n/25) *V_n
-           
-        i_max = tf.ones([tf.shape(A0)[0], 1,1]) * tf.reshape(tf.constant(self.i_max, dtype=tf.float32), [1, tf.shape(A0)[1]-2,1])
-            
-        loading = tf.concat([i_ka /i_max, i_kat],axis=1)
-        
-        regularizer2 = tf.reduce_sum(tf.nn.relu(loading - 1.)**2  * tf.math.reduce_max(cov_IL), axis=[1,2])  
-        
+        if n_trafo > 0:
+            i_ka = tf.maximum(I_ij_from, I_ij_to)[:, :-n_trafo, :] * V_n
+            i_kat = tf.maximum(I_ij_from[:, -n_trafo:, :] * V_h / 25, I_ij_to[:, -n_trafo:, :] * V_n / 25) * V_n
+
+            i_max = tf.ones([tf.shape(A0)[0], 1, 1]) * tf.reshape(tf.constant(self.i_max, dtype=tf.float32),
+                                                                  [1, tf.shape(A0)[1] - n_trafo, 1])
+
+            loading = tf.concat([i_ka / i_max, i_kat], axis=1)
+
+        else:
+            i_ka = tf.maximum(I_ij_from, I_ij_to) * V_n
+            i_max = tf.ones([tf.shape(A0)[0], 1, 1]) * tf.reshape(tf.constant(self.i_max, dtype=tf.float32),
+                                                                  [1, tf.shape(A0)[1], 1])
+
+            loading = i_ka / i_max
+
+        regularizer2 = tf.reduce_sum(tf.nn.relu(loading - 1.) ** 2 * tf.math.reduce_max(cov_IL), axis=[1, 2])
+
         # Compute difference of voltage angle across the lines and add constraint: \Delta U2 < 15 deg. = 0.25 rad
         U2_e = U2_i - U2_j - A[:,:,14:]
         regularizer3 = tf.reduce_sum((tf.nn.relu(-0.25 - U2_e) + tf.nn.relu(U2_e-0.25)) * tf.math.reduce_max(cov_IL), axis=[1,2]) 
