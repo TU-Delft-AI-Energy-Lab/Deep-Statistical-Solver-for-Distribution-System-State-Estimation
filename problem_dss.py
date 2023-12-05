@@ -117,15 +117,7 @@ class Problem:
         self.grid = grid
         # Output dimensions
         self.d_out = 2
-        
-        if self.grid=='cigre':
-            self.num_buses = 15
-        if self.grid=='ober':
-            self.num_buses = 70
-        
-        # Case study
-        self.grid = grid        # Fixing grid setup for other grid-related parameters
-        
+
         # Initial values for latent output variables
         self.initial_U = np.array([0.,0.])
         
@@ -152,21 +144,39 @@ class Problem:
                                          np.ones(1) * 0.645, np.ones(2) * 0.362, np.ones(1) * 0.645, np.ones(5) * 0.362,\
                                             np.ones(1) * 0.421, np.ones(1) * 0.362, np.ones(1) * 0.421, np.ones(5) * 0.362,\
                                                 np.ones(1) * 0.421, np.ones(1) * 0.421, np.ones(9) * 0.362], axis=0)
-    
+
+        if self.grid == 'lv':
+            # Normalization constants FOR LV grid
+            self.B_mean = np.array([1., 9926., -0.6, 2600., 1.25, 108376.4, 0.33, 204485.98])
+            self.B_std = np.array([0.03, 241., 0.03, 2600., 2.66, 277250.56, 0.62, 390057.16])
+
+            self.A_mean = np.array([0.84, -1.2, 0., 4.4e-5, 0.6, 23323.5, 0.2, 126025.6, 0.03, 14166381.])
+            self.A_std = np.array([0.77, 1.09, 1., 5.4e-5, 0.35, 20463.7, 0.1, 88732.7, 0.025, 23967946.])
+
+            self.i_max = np.ones(905) * 0.421
+
 
     def cost_function(self, A_flat, B_flat, y, lamda, A0, B0):
         
         
         """ Processing input features, parameters and output variables """
-        
-        V_n = 20.       # Nominal voltage of the grid
-        V_h = 110.      # Nominal voltage at the high-voltage side
-        n = V_h/V_n     # Transformer ratio
-        
+
         if self.grid=='cigre':
             n_trafo = 2
+            V_n = 20.  # Nominal voltage of the grid
+            V_h = 110.  # Nominal voltage at the high-voltage side
+            n = V_h / V_n  # Transformer ratio
         if self.grid=='ober':
             n_trafo = 1 # Number of trafos to separate from lines later
+            V_n = 20.  # Nominal voltage of the grid
+            V_h = 110.  # Nominal voltage at the high-voltage side
+            n = V_h / V_n  # Transformer ratio
+
+        if self.grid=='lv':
+            n_trafo = 1 # Number of trafos to separate from lines later
+            V_n = 0.416  # Nominal voltage of the grid
+            V_h = 11.  # Nominal voltage at the high-voltage side
+            n = V_h / V_n  # Transformer ratio
         
                 
         # Reshape the iterator
@@ -260,7 +270,10 @@ class Problem:
                                 
        
         # Casting I to tf.float32, and dividing by transformer ratio for the transformers
-        I_ij_from = tf.concat([tf.cast(I_ij_from[:,:-n_trafo], dtype=tf.float32), tf.cast(I_ij_from[:,-n_trafo:] / n, dtype=tf.float32)],axis=1)
+        if n_trafo >0:
+            I_ij_from = tf.concat([tf.cast(I_ij_from[:,:-n_trafo], dtype=tf.float32), tf.cast(I_ij_from[:,-n_trafo:] / n, dtype=tf.float32)],axis=1)
+        else:
+            tf.cast(I_ij_from, dtype=tf.float32)
         
         
         
@@ -287,8 +300,10 @@ class Problem:
         
         
         #Summing flow to balance in buses, negative signs in sum to follow conventions from PandaPower
-        P_i = -custom_scatter(indices_to, P_ij_to, [n_samples, n_nodes, 1]) - custom_scatter(indices_from, P_ij_from, [n_samples, n_nodes, 1])  # tf.float32, [n_samples, n_nodes, 1], in p.u.
-        Q_i = -custom_scatter(indices_to, Q_ij_to, [n_samples, n_nodes, 1]) - custom_scatter(indices_from, Q_ij_from, [n_samples, n_nodes, 1])  # tf.float32, [n_samples, n_nodes, 1], in p.u.
+        P_i = (-custom_scatter(indices_to, P_ij_to, [n_samples, n_nodes, 1]) -
+               custom_scatter(indices_from, P_ij_from, [n_samples, n_nodes, 1]))  # tf.float32, [n_samples, n_nodes, 1], in p.u.
+        Q_i = (-custom_scatter(indices_to, Q_ij_to, [n_samples, n_nodes, 1]) -
+               custom_scatter(indices_from, Q_ij_from, [n_samples, n_nodes, 1]))  # tf.float32, [n_samples, n_nodes, 1], in p.u.
         
 
         """ WLS calculation: Weighted MSE for each single measurement and summation """
@@ -329,7 +344,7 @@ class Problem:
 
         # Compute loading and add constraint: loading < 100%
         i_ka = tf.maximum(I_ij_from, I_ij_to)[:,:-2,:] * V_n
-        i_kat = tf.maximum(I_ij_from[:,-2:,:] * 110/25, I_ij_to[:,-2:,:] *20/25) *V_n 
+        i_kat = tf.maximum(I_ij_from[:,-2:,:] * V_h/25, I_ij_to[:,-2:,:] * V_n/25) *V_n
            
         i_max = tf.ones([tf.shape(A0)[0], 1,1]) * tf.reshape(tf.constant(self.i_max, dtype=tf.float32), [1, tf.shape(A0)[1]-2,1])
             
@@ -342,7 +357,7 @@ class Problem:
         regularizer3 = tf.reduce_sum((tf.nn.relu(-0.25 - U2_e) + tf.nn.relu(U2_e-0.25)) * tf.math.reduce_max(cov_IL), axis=[1,2]) 
         
         # Summing all terms
-        cost_per_sample =  cost_P + cost_Q + cost_PL + cost_QL + cost_theta + cost_IL + cost_v
+        cost_per_sample = cost_P + cost_Q + cost_PL + cost_QL + cost_theta + cost_IL + cost_v
         
         # Adding constraints, with lamda as hyper-parameter
         cost_per_sample += lamda * (regularizer + regularizer2 + regularizer3)
