@@ -277,7 +277,7 @@ def preprocess_data(A_flat, B_flat, problem, grid):
         lim = [1e6, 1e7, 1e5, 1e5, 1e5, 1.4e5, 1e8]
 
     else:
-        lim = [1e6, 1e7, 1e75, 1e7, 9e5, 1e6, 1e8]
+        lim = [1e6, 1e7, 1e5, 1e7, 9e5, 1e6, 1e8]
 
     # Calculation of weights from standard deviation and removing outliers
     cov_v_tf = tf.math.minimum((1. / B[:, :, 2:3] ** 2), lim[0])  # tf.float32, [n_samples, n_nodes, 1]
