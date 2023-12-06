@@ -326,7 +326,7 @@ def preprocess_data(A_flat, B_flat, problem, grid):
     b_i_flat = tf.reshape(b_i, [n_samples, -1])
 
 
-    return a_ij_flat, b_i_flat, A0, B0
+    return a_ij_flat, b_i_flat, A0, B0, A
 
 
 
@@ -667,7 +667,7 @@ def train_model(model, problem, lr, lamda, norm, num_epochs, minibatch_size, dat
         for A_flat, B_flat, U_flat in train_dataset:
             step += 1
 
-            a_flat, b_flat, A0, B0 = preprocess_data(A_flat, B_flat, problem, grid)
+            a_flat, b_flat, A0, B0, A = preprocess_data(A_flat, B_flat, problem, grid)
 
             # Optimize the model
             loss_value, grads = grad(model, a_flat, b_flat, lamda, A0, B0, problem)
@@ -701,7 +701,7 @@ def train_model(model, problem, lr, lamda, norm, num_epochs, minibatch_size, dat
 
         for A_flat, B_flat, U_flat in valid_dataset:
             step_val += 1
-            a_flat, b_flat, A0, B0 = preprocess_data(A_flat, B_flat, problem, grid)
+            a_flat, b_flat, A0, B0, A = preprocess_data(A_flat, B_flat, problem, grid)
 
             pred = model(a_flat, b_flat, A0, training=False)
             y_pred = pred * problem.B_std[0:3:2] + problem.B_mean[0:3:2]
@@ -712,8 +712,8 @@ def train_model(model, problem, lr, lamda, norm, num_epochs, minibatch_size, dat
 
             # Compute other variables to assess accuracy
 
-            pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y, A0, problem, grid)
-            pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true, A0, problem, grid)
+            pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y, A, problem, grid)
+            pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true, A, problem, grid)
 
             # Compute standard deviation to detect high bias
             std_U += y_true[:, :, 0].numpy().std()
@@ -791,7 +791,7 @@ def train_model_sup(model, problem, lr, lamda, norm, num_epochs, minibatch_size,
         for A_flat, B_flat, U_flat in train_dataset:
             step += 1
 
-            a_flat, b_flat, A0, B0 = preprocess_data(A_flat, B_flat, problem, grid)
+            a_flat, b_flat, A0, B0, A = preprocess_data(A_flat, B_flat, problem, grid)
 
             # Optimize the model
             loss_value, grads = grad_sup(model, a_flat, b_flat, U_flat, lamda, A0, B0, problem)
@@ -825,7 +825,7 @@ def train_model_sup(model, problem, lr, lamda, norm, num_epochs, minibatch_size,
 
         for A_flat, B_flat, U_flat in valid_dataset:
             step_val += 1
-            a_flat, b_flat, A0, B0 = preprocess_data(A_flat, B_flat, problem, grid)
+            a_flat, b_flat, A0, B0, A = preprocess_data(A_flat, B_flat, problem, grid)
 
             pred = model(a_flat, b_flat, A0, training=False)
             y_pred = pred * problem.B_std[0:3:2] + problem.B_mean[0:3:2]
@@ -836,8 +836,8 @@ def train_model_sup(model, problem, lr, lamda, norm, num_epochs, minibatch_size,
 
             # Compute other variables to assess accuracy
 
-            pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y, A0, problem, grid)
-            pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true, A0, problem, grid)
+            pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y, A, problem, grid)
+            pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true, A, problem, grid)
 
             # Comput standard deviation to detect high bias
             std_U += y_true[:, :, 0].numpy().std()
@@ -894,7 +894,7 @@ def test_model(model, problem, minibatch_size, data_directory, case, grid):
     test_lossv_results = []
 
     for A_flat, B_flat, U_flat in test_dataset:
-        a_flat, b_flat, A0, B0 = preprocess_data(A_flat, B_flat, problem, grid)
+        a_flat, b_flat, A0, B0, A = preprocess_data(A_flat, B_flat, problem, grid)
 
         pred = model(a_flat, b_flat, A0, training=False)
         y_pred = pred * problem.B_std[0:3:2] + problem.B_mean[0:3:2]
@@ -903,8 +903,8 @@ def test_model(model, problem, minibatch_size, data_directory, case, grid):
         size_mb = tf.shape(U_flat)[0]
         y_true = tf.reshape(U_flat, [size_mb, -1, 2])
 
-        pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y, A0, problem, grid)
-        pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true, A0, problem, grid)
+        pf_pred, qf_pred, pt_pred, qt_pred, if_pred, it_pred, loading_pred = get_pflow(y, A, problem, grid)
+        pf_true, qf_true, pt_true, qt_true, if_true, it_true, loading_true = get_pflow(y_true, A, problem, grid)
 
         ll = tf.reduce_mean((loading_pred - loading_true) ** 2) ** (1 / 2)
         lv = tf.reduce_mean((y_true[:, :, 0] - y[:, :, 0]) ** 2) ** (1 / 2)
@@ -1004,12 +1004,15 @@ def get_pflow(y, A0, problem, grid):
 
     # Calculating line and trafo loading
 
+
+
     if n_trafo>0:
         i_ka = tf.maximum(I_ij_from, I_ij_to)[:, :-n_trafo, :] * V_n
     else:
         i_ka = tf.maximum(I_ij_from, I_ij_to) * V_n
 
     if n_trafo>0:
+
         i_kat = tf.maximum(I_ij_from[:, -n_trafo:, :] * V_hv / 25, I_ij_to[:, -n_trafo:, :] * V_n / 25) * V_n * 100
 
         i_max = tf.ones([tf.shape(A0)[0], 1, 1]) * \
@@ -1022,5 +1025,7 @@ def get_pflow(y, A0, problem, grid):
                 tf.reshape(tf.constant(problem.i_max, dtype=tf.float32), [1, tf.shape(A0)[1], 1])
 
         loading = i_ka * 100 / i_max
+
+
 
     return P_ij_from * V_n ** 2, Q_ij_from * V_n ** 2, P_ij_to * V_n ** 2, Q_ij_to * V_n ** 2, I_ij_from * V_n, I_ij_to * V_n, loading
