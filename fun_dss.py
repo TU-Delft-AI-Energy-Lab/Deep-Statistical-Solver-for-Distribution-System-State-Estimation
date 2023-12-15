@@ -760,7 +760,7 @@ def train_model(model, problem, lr, lamda, norm, num_epochs, minibatch_size, dat
     ax.set_xlabel("# epoch")
     plt.show()
 
-    return model
+    return model, valv
 
 
 def train_model_sup(model, problem, lr, lamda, norm, num_epochs, minibatch_size, data_directory, case, optimizer, grid):
