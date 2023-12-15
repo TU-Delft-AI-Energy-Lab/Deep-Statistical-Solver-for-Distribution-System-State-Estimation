@@ -730,14 +730,14 @@ def train_model(model, problem, lr, lamda, norm, num_epochs, minibatch_size, dat
             val_loadline_results.append(lpl)
             val_lossv_results.append(lv)
 
-        print("std U: " + str(std_U / step_val))
-        print("std pred: " + str(std_pred / step_val))
+        #print("std U: " + str(std_U / step_val))
+        #print("std pred: " + str(std_pred / step_val))
 
-        print("Val loss V: " + str(tf.math.reduce_mean(val_lossv_results).numpy()))
-        print(" val RMSE loading: " + str(tf.math.reduce_mean(val_load_results).numpy()))
-        print(" val RMSE loading per line: " + str(tf.math.reduce_mean(val_loadline_results, axis=0).numpy()))
-        print("val RMSE pflow: " + str(tf.math.reduce_mean(val_lossp_results).numpy()))
-        print("")
+        #print("Val loss V: " + str(tf.math.reduce_mean(val_lossv_results).numpy()))
+        #print(" val RMSE loading: " + str(tf.math.reduce_mean(val_load_results).numpy()))
+        #print(" val RMSE loading per line: " + str(tf.math.reduce_mean(val_loadline_results, axis=0).numpy()))
+        #print("val RMSE pflow: " + str(tf.math.reduce_mean(val_lossp_results).numpy()))
+        #print("")#
 
         valv.append(tf.math.reduce_mean(val_lossv_results))
         valload.append(tf.math.reduce_mean(val_load_results))
@@ -750,6 +750,7 @@ def train_model(model, problem, lr, lamda, norm, num_epochs, minibatch_size, dat
     ax.set_title("RMSE of loading in validation per epoch")
     ax.set_ylabel("[%]")
     ax.set_xlabel("# epoch")
+    plt.show()
 
     fig = plt.figure()
     ax = fig.add_axes([0, 0, 1, 1])
@@ -757,6 +758,7 @@ def train_model(model, problem, lr, lamda, norm, num_epochs, minibatch_size, dat
     ax.set_title("RMSE of V in validation per epoch")
     ax.set_ylabel("[-]")
     ax.set_xlabel("# epoch")
+    plt.show()
 
     return model
 
