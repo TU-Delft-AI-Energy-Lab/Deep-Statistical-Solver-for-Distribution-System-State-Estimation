@@ -22,11 +22,6 @@ def get_edge_param(net):
     
     net.bus["name"] = np.arange(net.bus.index.size)
     
-    # old_line_index = net.line.index
-    # old_trafo_index = net.trafo.index
-    # net.line.index = np.arange(net.line.index.size)
-    # net.trafo.index += np.arange(net.line.index.size, net.line.index.size + net.trafo.index.size)
-    
     edge_length = net.line["length_km"]
     edge_r = net.line["r_ohm_per_km"] * edge_length
     edge_x = net.line["x_ohm_per_km"] * edge_length
@@ -66,7 +61,6 @@ def get_edge_param(net):
     
     edge_phase_shift = np.concatenate((np.zeros(net.line.index.size), t_phase_shift.values))
     
-    # edge_switch =  pd.DataFrame(data ={"closed": True}, index = np.concatenate([old_line_index,old_trafo_index]))
     edge_switch =  pd.DataFrame(data ={"closed": True}, index = np.concatenate([net.line.index,net.trafo.index]))
     edge_ind = -1
     for i in net.switch.index:
@@ -97,11 +91,9 @@ def get_edge_param(net):
     
     edge_param = pd.DataFrame({'from_bus': new_edge_source, 'to_bus': new_edge_target, 'G': np.real(edge_Y), 'B': np.imag(edge_Y), 'Gs': np.nan_to_num(np.real(edge_Ys)), 'Bs': np.nan_to_num(np.imag(edge_Ys)), 'closed line': bool_closed_line, 'phase shift': edge_phase_shift, 'imax or sn': edge_imax_or_sn})
     
-    # net.trafo.index -= net.line.index.size
-    
     return edge_param
 
-def data_from_pickles(folder, num_nfeat, num_efeat, num_nmeas, num_emeas):
+def data_from_pickles(folder, num_nfeat, num_efeat, num_nmeas, num_emeas, meas_v, meas_pflow):
     
     
     with open(folder+'nodes', 'rb') as file:
@@ -128,13 +120,6 @@ def data_from_pickles(folder, num_nfeat, num_efeat, num_nmeas, num_emeas):
         
         num_nodes = df_nodes_list[i].shape[0]
         meas_bus_mask = np.ones([num_nodes,num_nmeas]) * [0,0,1,1]
-    
-        if num_nodes<20:
-            meas_v = np.array([0,1,12,7,11,14])
-            meas_pflow = np.array([0,10])
-        else:
-            meas_v = np.array([35,16,52,47,6,48,59,27,37,56])
-            meas_pflow = np.array([40,43,11,21,54,57])
             
         for j in meas_v:
             meas_bus_mask[j][0] = 1.
@@ -163,6 +148,126 @@ def data_from_pickles(folder, num_nfeat, num_efeat, num_nmeas, num_emeas):
         meas_pflow_mask = np.zeros([num_lines,num_emeas])
         
         for j in meas_pflow:
+            meas_pflow_mask[j] = np.ones([1, num_emeas])
+        
+        edge_index = torch.tensor(df_closed_edges[['from_bus', 'to_bus']].values.astype(int), dtype=torch.long).t().contiguous()
+        
+        # Extract edge features from the DataFrame
+        edge_attr_mean = np.multiply(df_closed_edges[['p_from_mw', 'q_from_mvar']].values, meas_pflow_mask)
+        edge_attr_std = edge_attr_mean * pflow_noises
+
+        edge_attr = torch.tensor(edge_attr_mean+ np.random.normal(loc=0., scale = np.abs(edge_attr_std)), dtype=torch.float32)
+        
+        edge_attr_cov = torch.tensor(1, dtype=torch.float32)/torch.maximum((torch.abs(torch.tensor(edge_attr_std, dtype=torch.float32))),torch.tensor(1e-5, dtype=torch.float32))**2
+        edge_attr_cov *= (edge_attr_cov < 1e10).type(torch.float32)
+        
+        edge_attr_imp=torch.tensor(df_closed_edges[['G', 'B']].values, dtype=torch.float32)
+
+
+        edge_attr = torch.concat([edge_attr[:,0:1], edge_attr_cov[:,0:1], edge_attr[:,1:], edge_attr_cov[:,1:],edge_attr_imp], axis=1)
+
+        y = torch.tensor(df_labels_list[i].values, dtype=torch.float32)
+        
+        nodes_param = torch.tensor(df_nodes_list[i][['vn_kv', 'bool_slack', 'bool_zero_inj']].values, dtype=torch.float32)
+        edges_param = torch.tensor(df_closed_edges[['G','B','Gs', 'Bs', 'closed line', 'phase shift', 'imax or sn']].values, dtype=torch.float32)
+        
+        x_tensor = torch.cat((x_tensor,(torch.concat([x,nodes_param],axis=1))), dim=0)
+        y_tensor = torch.cat((y_tensor,y), dim=0)
+        edge_attr_tensor = torch.cat((edge_attr_tensor,torch.concat([edge_attr, edges_param], axis=1)), dim=0)
+        edge_index_list.append(edge_index)
+        
+    x_mask = x_tensor !=0.
+    x_set_mean = torch.nan_to_num((x_tensor*x_mask).sum(dim=[0])/x_mask.sum(dim=[0]))
+    x_set_std = torch.nan_to_num(torch.sqrt(((x_tensor-x_set_mean)**2*x_mask).sum(dim=[0])/x_mask.sum(dim=[0])))
+    x_set = torch.nan_to_num((x_tensor-x_set_mean)*x_mask/x_set_std)
+    x_set[:,num_nfeat:] = x_tensor[:,num_nfeat:]
+    
+    edge_attr_mask = edge_attr_tensor != 0.
+    edge_attr_set_mean = torch.nan_to_num((edge_attr_tensor*edge_attr_mask).sum(dim=[0])/edge_attr_mask.sum(dim=[0]))
+    edge_attr_set_std = torch.nan_to_num(torch.sqrt(((edge_attr_tensor-edge_attr_set_mean)**2*edge_attr_mask).sum(dim=[0])/edge_attr_mask.sum(dim=[0])))
+    edge_attr_set = torch.nan_to_num((edge_attr_tensor-edge_attr_set_mean)*edge_attr_mask/edge_attr_set_std)
+    
+    edge_attr_set[:,num_efeat:] = edge_attr_tensor[:,num_efeat:]
+    
+    for i in range(len(df_nodes_list)):
+        num_nodes = df_nodes_list[i].shape[0]
+        df_closed_edges = df_edges_list[i][df_edges_list[i]['closed line']==1.]
+        
+        num_lines = df_closed_edges.shape[0]
+        # Create a PyTorch Geometric Data object
+        data = Data(x=x_set[:num_nodes], edge_index=edge_index_list[i], edge_attr=edge_attr_set[:num_lines], y=y_tensor[:num_nodes])
+        data.validate(raise_on_error=True)
+        data_list.append(data)
+        
+        x_set = x_set[num_nodes:]
+        y_tensor = y_tensor[num_nodes:]
+        edge_attr_set = edge_attr_set[num_lines:]
+        
+    return data_list, x_set_mean[:num_nfeat], x_set_std[:num_nfeat], edge_attr_set_mean[:num_efeat], edge_attr_set_std[:num_efeat]
+
+    
+    
+    with open(folder+'nodes', 'rb') as file:
+        df_nodes_list = pickle.load(file)
+    with open(folder+'edges', 'rb') as file:
+        df_edges_list = pickle.load(file)
+    with open(folder+'labels', 'rb') as file:
+        df_labels_list = pickle.load(file)
+    with open(folder+'noise_param', 'rb') as file:
+        df_noise_list = pickle.load(file)
+        
+    data_list = []
+    nodes_noises = df_noise_list[['v_noise', 'v_noise', 'pm_noise', 'pm_noise']].values
+    zero_inj_noises = df_noise_list[['zero_inj_coef', 'zero_inj_coef']].values
+    slack_noise = df_noise_list[['v_noise', 'zero_inj_coef', 'p_noise', 'p_noise']].values
+    pflow_noises = df_noise_list[['p_noise','p_noise']].values
+    
+    x_tensor = torch.tensor([])
+    y_tensor = torch.tensor([])
+    edge_attr_tensor = torch.tensor([])
+    edge_index_list = []
+    
+    for i in range(len(df_nodes_list)):
+        
+        num_nodes = df_nodes_list[i].shape[0]
+        meas_bus_mask = np.ones([num_nodes,num_nmeas]) * [0,0,1,1]
+    
+
+        meas_v = df_nodes_list[i].index
+        
+        
+        print(meas_v)
+            
+        for j in meas_v:
+            meas_bus_mask[j][0] = 1.
+
+        # Extract node features from the DataFrame
+        x_mean = np.multiply(df_nodes_list[i][['vm_pu','va_rad','p_mw', 'q_mvar']].values, meas_bus_mask)
+        x_std = x_mean * (slack_noise * np.expand_dims(df_nodes_list[i]['bool_slack'].values,axis=1) +  nodes_noises * (1 - np.expand_dims(df_nodes_list[i]['bool_slack'].values,axis=1)))
+        
+        x = torch.tensor(x_mean + np.random.normal(loc=0., scale = np.abs(x_std)), dtype=torch.float32)
+        
+        x_std[:,2:] += zero_inj_noises * np.expand_dims(df_nodes_list[i]['bool_zero_inj'].values, axis=1)
+        
+        x_std[:,1:2] += slack_noise[:,1:2] * np.expand_dims(df_nodes_list[i]['bool_slack'].values, axis=1)
+        
+        x_cov = torch.tensor(1, dtype=torch.float32)/torch.maximum((torch.abs(torch.tensor(x_std, dtype=torch.float32))),torch.tensor(1e-6, dtype=torch.float32))**2
+        x_cov *= (x_cov < 1e12).type(torch.float32)
+
+
+        x = torch.concat([x[:,0:1], x_cov[:,0:1], x[:,1:2], x_cov[:,1:2], x[:,2:3],x_cov[:,2:3], x[:,3:], x_cov[:,3:]], axis=1)
+
+        # Extract edge index from the DataFrame
+        df_closed_edges = df_edges_list[i][df_edges_list[i]['closed line']==1.]
+        
+        num_lines = df_closed_edges.shape[0]
+        meas_pflow = df_closed_edges.index
+        
+        print(meas_pflow)
+        
+        meas_pflow_mask = np.zeros([num_lines,num_emeas])
+        
+        for j in range(meas_pflow.shape[0]):
             meas_pflow_mask[j] = np.ones([1, num_emeas])
         
         edge_index = torch.tensor(df_closed_edges[['from_bus', 'to_bus']].values.astype(int), dtype=torch.long).t().contiguous()
@@ -330,10 +435,10 @@ def gsp_wls_edge(input, edge_input, output, x_mean, x_std, edge_mean, edge_std, 
     h_edge = torch.concatenate([ torch.unsqueeze(p_from,1),  torch.unsqueeze(q_from,1)], dim =1)
 
     delta = Z - h  # [batch*num_nodes, 4]
-    print(f'delta:{delta[1]}')
+    
     delta_edge = edge_Z - h_edge
     
-    print(f'delta_edge:{delta_edge[0]}')
+    
     
     meas_node_weights = torch.tensor([reg_coefs['lam_v'], reg_coefs['lam_v'], reg_coefs['lam_p'], reg_coefs['lam_p']])
     meas_edge_weights = torch.tensor([reg_coefs['lam_pf'], reg_coefs['lam_pf']])
@@ -341,44 +446,14 @@ def gsp_wls_edge(input, edge_input, output, x_mean, x_std, edge_mean, edge_std, 
     J_sample = torch.sum(torch.mul(delta**2 * R_inv, meas_node_weights), axis=1)
     J_sample_edge = torch.sum(torch.mul(delta_edge**2 * R_edge_inv, meas_edge_weights), axis=1)
     
-    # print(f'J sample:{torch.mul(delta**2 * R_inv, meas_node_weights)[1]}')
-    # print(f'J sample edge:{torch.mul(delta_edge**2 * R_edge_inv, meas_edge_weights)[0]}')
     
     J = torch.mean(J_sample) + torch.mean(J_sample_edge) # [1,1]
-    print(f'J:{J}')
     
-    # v_slack = z[:,0] * node_param[:,1]  # [batch, 1] v_slack at each batch 
-
-    # v_slack_reg = torch.unsqueeze(v_slack.repeat_interleave(num_nodes),1) # [batch*num_nodes,1]
-    # theta_slack_reg = v_slack_reg*0. # [batch*num_nodes,1]
-    
-    # x_0 = torch.concatenate([v_slack_reg, theta_slack_reg], axis=1) # [batch*num_nodes,2]
-
-    # x_reg = torch.reshape((output - x_0),[2*num_samples*num_nodes,1]) # [2*batch*num_nodes,1]
-
-    
-    # zeros = torch.zeros([num_samples*num_nodes, num_samples*num_nodes])
-    
-    # L_reg = torch.concatenate([torch.concatenate([reg_coefs['mu_v']*Ld, zeros],axis=1),torch.concatenate([zeros, reg_coefs['mu_theta']*Ld],axis=1)]) # [2*batch*num_nodes, 2*batch*num_nodes]
-    
-    # J2 = torch.matmul(torch.matmul(x_reg.t(),L_reg),x_reg).abs()
 
     J_v = reg_coefs['lam_reg']*torch.mean(torch.relu(v_i - 1.1) + torch.relu(0.9 - v_i))**2
     J_theta = reg_coefs['lam_reg'] * torch.mean(torch.relu(theta_ij - 0.5))**2
     J_loading = reg_coefs['lam_reg'] *torch.mean(torch.relu(loading - 1.5))**2
     
-    # print(f'J:{J}')
-    # print(f'J2:{J2}')
-    
-    # print(f'J_v:{J_v}')
-    # print(f'J_theta:{J_theta}')
-    # print(f'J_loading:{J_loading}')
-    
-    # print(f'J v:{J_v}')
-    # print(f'J theta:{J_theta}')
-    # print(f'J load:{J_loading}')
-    
-    # J_reg = J + J2 +  J_v +  J_theta +  J_loading # [1,1]
     J_reg = J +  J_v +  J_theta +  J_loading # [1,1]
     
     return J_reg
@@ -423,46 +498,26 @@ def gsp_wls(input, output, x_mean, x_std, edge_index, reg_coefs, grid, num_sampl
     q_i = -scatter(q_to,indices_to) - scatter(q_from, indices_from) # [batch*num_nodes, 1]
     
     theta_ij = torch.abs(torch.gather(theta_i[:,0],0, indices_from) - torch.gather(theta_i[:,0],0,indices_to))
-    intp = np.random.choice(range(50))
-    # print(f'v:{v_i[intp]}')
-    # print(f'p:{p_i[intp]}')
-    # print(f'q:{q_i[intp]}')
     
-    # print(f'R_inv:{R_inv[intp]}')
 
     h = torch.concatenate([v_i, theta_i, torch.unsqueeze(p_i,1), torch.unsqueeze(q_i,1)], dim = 1) # [batch*num_nodes, 4]
 
     delta = Z - h  # [batch*num_nodes, 4]
     
-    # print(f'z:{z[intp]}')
-    # print(f'h:{h[intp]}')
-    # print(f'delta:{delta[intp]}')
+    
     
     J_sample = torch.sum(delta**2 * R_inv, axis=1)
-    # print(f'J_sample:{J_sample[intp]}')
+    
     J = torch.mean(J_sample) # [1,1]
 
-    v_slack = z[::num_nodes,0] # [batch, 1] v_slack at each batch 
-
-    v_slack_reg = torch.unsqueeze(v_slack.repeat_interleave(num_nodes),1) # [batch*num_nodes,1]
-    theta_slack_reg = v_slack_reg*0. # [batch*num_nodes,1]
-    
-    x_0 = torch.concatenate([v_slack_reg, theta_slack_reg], axis=1) # [batch*num_nodes,2]
-
-    x_reg = torch.reshape((output - x_0),[2*num_samples*num_nodes,1]) # [2*batch*num_nodes,1]
 
     
-    zeros = torch.zeros([num_samples*num_nodes, num_samples*num_nodes])
     
-    L_reg = torch.concatenate([torch.concatenate([reg_coefs['mu_v']*Ld, zeros],axis=1),torch.concatenate([zeros, reg_coefs['mu_theta']*Ld],axis=1)]) # [2*batch*num_nodes, 2*batch*num_nodes]
-    
-    J2 = torch.matmul(torch.matmul(x_reg.t(),L_reg),x_reg)
-
     J_v = torch.mean(torch.relu(v_i/V_n - 1.1) + torch.relu(0.9 - v_i/V_n))**2
     J_theta = torch.mean(torch.relu(theta_ij - 0.5))**2
     J_loading = torch.mean(torch.relu(loading - 1.5))**2
     
-    J_reg = J + J2 + reg_coefs['lam_reg']* (J_v + J_theta + J_loading) # [1,1]
+    J_reg = J + reg_coefs['lam_reg']* (J_v + J_theta + J_loading) # [1,1]
     
     return J_reg
     
