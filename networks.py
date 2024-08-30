@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch_geometric.nn as nn_geo
 import torch.nn.functional as F
 import numpy as np
-from torch_geometric.nn.conv import GCN2Conv, FAConv, TAGConv, GINEConv, MessagePassing, GCNConv, ChebConv
+from torch_geometric.nn.conv import GCN2Conv, FAConv, TAGConv, GINEConv, MessagePassing, GCNConv, ChebConv, GATv2Conv
 from torch.nn import Linear, LeakyReLU
 from torch_geometric.utils import degree
 
@@ -99,6 +99,51 @@ class GINE_DSSE(nn.Module):
             for l in range(self.num_layers-1):
                 hyperparameters = {"nn":self.nn, "eps":self.eps, "train_eps": self.train_eps, "edge_dim":self.edge_dim}
                 nn_layer.extend([(GINEConv(**hyperparameters), 'x, edge_index, edge_attr -> x'), self.nonlin])
+        else:
+            raise Exception('invalid model type')
+        
+        nn_layer.extend([Linear(in_features=self.dim_hidden, out_features=self.dim_dense)])
+        nn_layer.extend([Linear(in_features=self.dim_dense, out_features=self.dim_out)])
+        
+        self.model = nn_geo.Sequential('x, edge_index,edge_attr', nn_layer)
+
+    def forward(self,x, edge_index, edge_attr):
+        return self.model(x, edge_index,edge_attr)
+    
+class GAT_DSSE(nn.Module):
+    def __init__(self, dim_feat, dim_dense, dim_out, num_layers, edge_dim, heads =1, concat = True, slope = 0.2, self_loops = True, dropout = 0., nonlin = 'leaky_relu', model = 'gat'):
+        super().__init__()
+        self.dim_out = dim_out
+        self.num_layers = num_layers
+        self.dim_feat=dim_feat
+        self.dim_dense = dim_dense
+        self.edge_dim = edge_dim
+        self.dim_hidden = dim_feat
+        
+        self.channels = dim_feat
+        self.heads = heads
+        self.dim_out = dim_out
+        self.concat = concat
+        self.slope = slope
+        self.dropout = dropout
+        self.loop = self_loops
+        self.num_layers = num_layers
+        
+        if nonlin == 'relu':
+            self.nonlin = nn.ReLU()
+        elif nonlin == 'tanh':
+            self.nonlin = nn.Tanh()
+        elif nonlin == 'leaky_relu':
+            self.nonlin = LeakyReLU()
+        else:
+            raise Exception('invalid activation type')
+        
+        nn_layer = []
+        if model == 'gat':
+            for l in range(self.num_layers-1):
+                hyperparameters = {"in_channels":self.channels,"out_channels":self.channels,
+                "heads": self.heads, "concat": self.concat, "negative_slope": self.slope, "dropout": self.dropout, "add_self_loops": self.loop, "edge_dim":self.edge_dim}
+                nn_layer.extend([(GATv2Conv(**hyperparameters), 'x, edge_index, edge_attr -> x'), self.nonlin])
         else:
             raise Exception('invalid model type')
         
