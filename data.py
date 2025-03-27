@@ -335,7 +335,7 @@ def get_pflow(y, edge_index, node_param, edge_param, phase_shift=True):
     V_hv = V_n.max()
     V_lv = V_n.min()  # Considering only two V level
     
-    ratio = torch.tensor(V_hv/V_lv)
+    ratio = (V_hv / V_lv).clone().detach()
 
     # Store output values separately
     V = y[:,0] # in pu
@@ -363,9 +363,9 @@ def get_pflow(y, edge_index, node_param, edge_param, phase_shift=True):
         shift = 0
     else:  
         shift = torch.tensor(edge_param[:,5])
-        
-    trafo_pos = torch.ceil(torch.tensor(edge_param[:,5]))
-    imax_or_sn = torch.tensor(edge_param[:,6])
+
+    trafo_pos = torch.ceil(edge_param[:, 5].clone().detach())
+    imax_or_sn = edge_param[:, 6].clone().detach()
 
     P_ij_from = (- V_i * V_j * (Y1_ij * torch.cos(Th_i - Th_j - shift) + Y2_ij * torch.sin(Th_i - Th_j - shift)) + (Y1_ij + Ys1_ij / 2) * V_i ** 2) * V_lv**2  
 
